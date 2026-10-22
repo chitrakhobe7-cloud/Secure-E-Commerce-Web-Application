@@ -1,0 +1,613 @@
+# Taksham
+
+> A production-oriented furniture e-commerce platform built with a React/TypeScript frontend and a service-oriented Node.js/Express backend.
+
+---
+
+## Architecture Overview
+
+Taksham separates the storefront from independent backend business services. Each service owns a clear domain boundary and exposes versioned REST APIs.
+
+```text
+                              TAKSHAM E-COMMERCE
+                                       │
+                                       ▼
+                         ┌──────────────────────────┐
+                         │      React Frontend      │
+                         │   TypeScript + Vite      │
+                         │                          │
+                         │ Pages / Components      │
+                         │ Context / State         │
+                         │ API Service Layer       │
+                         └────────────┬─────────────┘
+                                      │
+          ┌───────────────────────────┼───────────────────────────┐
+          │                           │                           │
+          ▼                           ▼                           ▼
+ ┌────────────────┐        ┌────────────────┐        ┌────────────────┐
+ │  Auth Service  │        │ Product Service│        │  Cart Service  │
+ │                │        │                │        │                │
+ │ Users          │        │ Products       │        │ Cart           │
+ │ JWT Auth       │        │ Categories     │        │ Wishlist       │
+ │ Sessions       │        │ Media          │        │ Cart Logic     │
+ └───────┬────────┘        └───────┬────────┘        └───────┬────────┘
+         │                         │                         │
+         └─────────────────────────┼─────────────────────────┘
+                                   │
+                         ┌─────────┴─────────┐
+                         ▼                   ▼
+                ┌────────────────┐  ┌────────────────┐
+                │ Order Service  │  │  Utils Service │
+                │                │  │                │
+                │ Orders         │  │ Utility APIs   │
+                │ Status         │  │ Shared support │
+                │ Checkout       │  │ functionality  │
+                └───────┬────────┘  └────────────────┘
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │   MongoDB    │
+                 │ Persistence  │
+                 └──────────────┘
+```
+
+## Service Boundaries
+
+| Service | Primary responsibility | Main domain |
+|---|---|---|
+| **Auth Service** | Identity and authentication | Users, JWT, sessions |
+| **Product Service** | Store catalog | Products, categories, media |
+| **Cart Service** | Shopping state | Cart, wishlist |
+| **Order Service** | Purchase lifecycle | Orders, checkout, status |
+| **Utils Service** | Supporting backend capabilities | Utility APIs |
+
+### 1. Auth Service
+
+Handles user identity and authentication.
+
+- Registration and login
+- Current-user authentication
+- JWT access and refresh tokens
+- Logout
+- Password-related authentication flows
+- Role information
+- HTTP-only authentication cookies
+
+```text
+Client → Auth API → Validate → Authenticate → Issue JWT → HTTP-only Cookie
+```
+
+### 2. Product Service
+
+Owns the catalog domain.
+
+- Product management
+- Product retrieval/details
+- Categories
+- Product-related validation
+- Media endpoints
+
+```text
+Product Domain
+ ├── Products
+ ├── Categories
+ └── Media
+```
+
+### 3. Cart Service
+
+Owns shopping-session functionality.
+
+- Add/remove cart items
+- Update quantities
+- Retrieve/clear cart
+- Wishlist operations
+
+```text
+Cart Service
+ ├── Cart
+ │   ├── Items
+ │   └── Quantities
+ └── Wishlist
+```
+
+### 4. Order Service
+
+Owns the order lifecycle.
+
+- Create orders
+- Retrieve customer orders
+- Retrieve individual orders
+- Administrative order retrieval
+- Retrieve orders for a customer
+- Update order status
+- Persist checkout/order information
+
+```text
+Checkout → Order Service → Create Order → MongoDB
+```
+
+### 5. Utils Service
+
+Provides supporting backend utility functionality so common capabilities are not tightly coupled to one business domain.
+
+---
+
+## Request Lifecycle
+
+Backend services follow a layered Express request flow:
+
+```text
+HTTP Request
+     │
+     ▼
+CORS / Express
+     │
+     ▼
+Route
+     │
+     ▼
+Authentication Middleware
+     │
+     ▼
+Validation Middleware
+     │
+     ▼
+Controller
+     │
+     ▼
+Service / Business Logic
+     │
+     ▼
+Mongoose Model
+     │
+     ▼
+MongoDB
+     │
+     ▼
+JSON Response
+```
+
+### Layer responsibilities
+
+| Layer | Responsibility |
+|---|---|
+| Route | Maps HTTP requests to handlers |
+| Middleware | Authentication, validation and request processing |
+| Controller | Handles HTTP-level operations |
+| Service | Business logic |
+| Model | MongoDB schema/data access |
+| Validator | Request/data validation |
+| Config | Environment/application configuration |
+| Utility | Reusable supporting logic |
+
+---
+
+## Frontend Architecture
+
+```text
+React Application
+       │
+       ├── Pages
+       ├── Components
+       ├── Contexts / State
+       ├── API Services
+       ├── Hooks
+       ├── Types
+       ├── Utilities
+       └── Assets
+```
+
+The frontend keeps API communication inside a service layer so UI components do not need to know backend deployment details.
+
+```text
+User Action
+    │
+    ▼
+React Component
+    │
+    ▼
+Context / Hook
+    │
+    ▼
+API Service
+    │
+    ▼
+Domain Backend Service
+    │
+    ▼
+Controller → Business Logic → Database
+```
+
+---
+
+## Authentication Architecture
+
+Taksham uses JWT-based authentication with HTTP-only cookies.
+
+```text
+                    LOGIN
+                      │
+                      ▼
+               ┌─────────────┐
+               │ Auth Service│
+               └──────┬──────┘
+                      │
+                Validate User
+                      │
+                      ▼
+                 Generate JWT
+                  │        │
+                  ▼        ▼
+              Access     Refresh
+               Token      Token
+                  │        │
+                  └────┬───┘
+                       ▼
+                HTTP-only Cookies
+                       │
+                       ▼
+                    Browser
+```
+
+For protected APIs:
+
+```text
+Browser
+   │ credentials: include
+   ▼
+Protected Service
+   │
+   ▼
+Authentication Middleware
+   ├── Read access-token cookie
+   ├── Verify JWT
+   ├── Extract userId + role
+   └── Attach authenticated user
+               │
+               ▼
+           Controller
+```
+
+Access and refresh token secrets must be configured consistently wherever tokens are independently verified.
+
+---
+
+## API Architecture
+
+All APIs use the `/api/v1` versioning convention.
+
+```text
+/api/v1
+│
+├── /auth
+├── /products
+├── /categories
+├── /cart
+├── /wishlist
+└── /orders
+```
+
+### Frontend service configuration
+
+```env
+VITE_API_URL=https://taksham-auth.onrender.com/api/v1
+VITE_PRODUCT_SERVICE_URL=https://taksham-product.onrender.com/api/v1/products
+VITE_CATEGORY_SERVICE_URL=https://taksham-product.onrender.com/api/v1/categories
+VITE_CART_SERVICE_URL=https://taksham-cart.onrender.com/api/v1/cart
+VITE_UTILS_SERVICE_URL=https://taksham-utils.onrender.com/api/v1
+VITE_ORDER_SERVICE_URL=https://taksham-order.onrender.com/api/v1/orders
+VITE_RAZORPAY_KEY_ID=
+```
+
+---
+
+## Data Ownership
+
+```text
+AUTH SERVICE
+ └── User / Authentication Domain
+
+PRODUCT SERVICE
+ ├── Product Domain
+ ├── Category Domain
+ └── Media Domain
+
+CART SERVICE
+ ├── Cart Domain
+ └── Wishlist Domain
+
+ORDER SERVICE
+ └── Order Domain
+
+UTILS SERVICE
+ └── Utility Domain
+```
+
+The separation keeps business responsibilities explicit and allows individual services to evolve independently.
+
+---
+
+## Checkout Flow
+
+```text
+Customer
+   │
+   ▼
+Browse Products
+   │
+   ▼
+Product Service
+   │
+   ▼
+Add to Cart
+   │
+   ▼
+Cart Service
+   │
+   ▼
+Checkout Page
+   ├── Customer information
+   ├── Delivery information
+   ├── Order summary
+   └── Payment integration
+              │
+              ▼
+        Order Service
+              │
+              ▼
+         Create Order
+              │
+              ▼
+           MongoDB
+```
+
+---
+
+## Production Deployment
+
+Current backend services are deployed independently on Render.
+
+```text
+                         INTERNET
+                            │
+                            ▼
+                    ┌──────────────┐
+                    │    Vercel    │
+                    │   Frontend   │
+                    └──────┬───────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+      Render             Render             Render
+        │                  │                  │
+    Auth API          Product API          Cart API
+        │                  │                  │
+        └──────────────────┼──────────────────┘
+                           │
+                    ┌──────┴──────┐
+                    ▼             ▼
+                 Render        Render
+                    │             │
+                Order API     Utils API
+                    │
+                    ▼
+                 MongoDB
+```
+
+### Service URLs
+
+| Service | Deployment |
+|---|---|
+| Auth | `https://taksham-auth.onrender.com` |
+| Product | `https://taksham-product.onrender.com` |
+| Cart | `https://taksham-cart.onrender.com` |
+| Order | `https://taksham-order.onrender.com` |
+| Utils | `https://taksham-utils.onrender.com` |
+
+The frontend can be deployed on Vercel while backend services remain independently deployed on Render.
+
+---
+
+## Environment & Security
+
+Backend configuration is environment-driven.
+
+```env
+NODE_ENV=production
+PORT=
+MONGODB_URI=
+JWT_ACCESS_SECRET=
+JWT_REFRESH_SECRET=
+JWT_ACCESS_EXPIRES_IN=
+JWT_REFRESH_EXPIRES_IN=
+CLIENT_URL=
+MEDIA_SERVICE_URL=
+EMAIL_USER=
+EMAIL_PASSWORD=
+INTERNAL_SERVICE_SECRET=
+COOKIE_SAME_SITE=none
+```
+
+Security principles:
+
+- JWT authentication for protected resources
+- HTTP-only authentication cookies
+- Secure cookies in production
+- Explicit CORS configuration
+- Request validation
+- Environment-based secrets
+- No secrets committed to source control
+
+---
+
+## Project Structure
+
+```text
+Taksham/
+│
+├── frontend/
+│   └── src/
+│       ├── assets/
+│       ├── components/
+│       ├── contexts/
+│       ├── hooks/
+│       ├── pages/
+│       ├── services/
+│       ├── types/
+│       └── utils/
+│
+├── backend/
+│   ├── auth-service/
+│   ├── product-service/
+│   ├── cart-service/
+│   ├── order-service/
+│   └── utils-service/
+│
+└── README.md
+```
+
+Each backend service follows the same general internal organization where applicable:
+
+```text
+service/
+├── config/
+├── controllers/
+├── middleware/
+├── models/
+├── routes/
+├── services/
+├── utils/
+├── validators/
+└── server/app entry point
+```
+
+---
+
+## Technology Stack
+
+### Frontend
+
+- React
+- TypeScript
+- Vite
+- React Router
+- Context-based state management
+- Fetch/API service layer
+- Lucide React
+
+### Backend
+
+- Node.js
+- TypeScript
+- Express
+- MongoDB
+- Mongoose
+- JWT
+- Zod
+
+### Infrastructure & Integrations
+
+- Render — backend services
+- Vercel — frontend deployment
+- MongoDB — persistence
+- Razorpay — payment integration
+
+---
+
+## Architectural Principles
+
+### Separation of concerns
+
+Authentication, catalog, cart, orders and utility capabilities are separated by domain.
+
+### Clear service boundaries
+
+Each backend service exposes APIs for its own responsibility instead of creating one large tightly coupled backend.
+
+### API-first communication
+
+The frontend communicates with backend domains through versioned APIs.
+
+### Layered backend design
+
+Routes, middleware, controllers, services and models have distinct responsibilities.
+
+### Environment-driven deployment
+
+Deployment-specific URLs, credentials and secrets remain outside application source code.
+
+### Independent deployment
+
+Services can be built, deployed and restarted independently.
+
+### Extensibility
+
+Additional domains can be introduced without restructuring the existing business services.
+
+```text
+                    TAKSHAM
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+     Existing       Existing        Future
+     Services       Services        Services
+                                      │
+                                      ├── Reviews
+                                      ├── Inventory
+                                      ├── Notifications
+                                      └── Analytics
+```
+
+---
+
+## Local Development
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Backend services
+
+Run each service from its own directory and provide its required environment variables.
+
+```bash
+npm install
+npm run dev
+```
+
+The frontend's Vite environment variables determine whether it communicates with local services or the deployed Render APIs.
+
+---
+
+## Architecture Summary
+
+```text
+                         TAKSHAM
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+       React Frontend              Backend Services
+       TypeScript + Vite                  │
+                                          │
+        ┌─────────────────────────────────┼────────────────────┐
+        │                │                │                    │
+        ▼                ▼                ▼                    ▼
+      AUTH            PRODUCT            CART                ORDER
+        │                │                │                    │
+        │          ┌─────┴─────┐          │                    │
+        │       CATEGORY      MEDIA       │                    │
+        │                              WISHLIST                │
+        └────────────────────────────────┼────────────────────┘
+                                         │
+                                         ▼
+                                   MongoDB / APIs
+```
+
+**Taksham is organized around independently deployable business services, a dedicated React frontend, versioned REST APIs, JWT-based authentication, and clear ownership of catalog, customer, cart, order and utility responsibilities.**
